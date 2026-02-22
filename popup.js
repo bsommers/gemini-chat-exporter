@@ -86,18 +86,46 @@ document.querySelectorAll('.export-btn').forEach(btn => {
 
             showStatus('Generating export…', 'loading');
 
-            // Send to background worker for file generation
-            const response = await chrome.runtime.sendMessage({
-                action: 'export',
-                format,
-                chatData
-            });
+            const safeName = chatData.title
+                .replace(/[^\w\s-]/g, '')
+                .replace(/\s+/g, '-')
+                .substring(0, 60) || 'gemini-chat';
 
-            if (response?.success) {
-                showStatus(`✓ Exported as ${response.filename}`, 'success');
-            } else {
-                showStatus(response?.error || 'Export failed.', 'error');
+            let filename, blob;
+
+            switch (format) {
+                case 'markdown': {
+                    const md = exportMarkdown(chatData);
+                    filename = `${safeName}.md`;
+                    blob = new Blob([md], { type: 'text/markdown' });
+                    break;
+                }
+                case 'docx': {
+                    blob = await exportDocx(chatData);
+                    filename = `${safeName}.docx`;
+                    break;
+                }
+                case 'html_single': {
+                    const html = exportHtmlSingle(chatData);
+                    filename = `${safeName}.html`;
+                    blob = new Blob([html], { type: 'text/html' });
+                    break;
+                }
+                case 'html_linked': {
+                    blob = await exportHtmlLinked(chatData);
+                    filename = `${safeName}.zip`;
+                    break;
+                }
+                default:
+                    throw new Error(`Unknown format: ${format}`);
             }
+
+            // Trigger download via object URL
+            const url = URL.createObjectURL(blob);
+            await chrome.downloads.download({ url, filename, saveAs: false });
+            URL.revokeObjectURL(url);
+
+            showStatus(`✓ Exported as ${filename}`, 'success');
         } catch (err) {
             console.error('Export error:', err);
             showStatus(`Error: ${err.message}`, 'error');

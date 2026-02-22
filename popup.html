@@ -1,18 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Gemini Chat Exporter</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
+
 <body>
   <div class="header">
     <div class="logo">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="#8ab4f8"/>
-        <path d="M2 17L12 22L22 17" stroke="#8ab4f8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M2 12L12 17L22 12" stroke="#8ab4f8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="#8ab4f8" />
+        <path d="M2 17L12 22L22 17" stroke="#8ab4f8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        <path d="M2 12L12 17L22 12" stroke="#8ab4f8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
       </svg>
       <span>Gemini Exporter</span>
     </div>
@@ -63,6 +65,15 @@
 
   <div id="status" class="status hidden"></div>
 
+  <!-- Libs and exporters run here so they have DOM access (service workers don't) -->
+  <script src="lib/turndown.min.js"></script>
+  <script src="lib/jszip.min.js"></script>
+  <script src="lib/docx.min.js"></script>
+  <script src="exporters/markdown.js"></script>
+  <script src="exporters/html_single.js"></script>
+  <script src="exporters/html_linked.js"></script>
+  <script src="exporters/docx_export.js"></script>
   <script src="popup.js"></script>
 </body>
+
 </html>
