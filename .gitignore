@@ -1,0 +1,6 @@
+lib/
+*.zip
+*.docx
+*.md~
+.DS_Store
+Thumbs.db

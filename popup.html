@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gemini Chat Exporter</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="header">
+    <div class="logo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="#8ab4f8"/>
+        <path d="M2 17L12 22L22 17" stroke="#8ab4f8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M2 12L12 17L22 12" stroke="#8ab4f8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>Gemini Exporter</span>
+    </div>
+  </div>
+
+  <div class="chat-info">
+    <div class="chat-icon">💬</div>
+    <div class="chat-title" id="chatTitle">Detecting chat…</div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="section-label">Export as</div>
+
+  <div class="buttons">
+    <button class="export-btn" id="btnMarkdown" data-format="markdown">
+      <span class="btn-icon">📝</span>
+      <div class="btn-text">
+        <span class="btn-title">Markdown</span>
+        <span class="btn-sub">.md file</span>
+      </div>
+    </button>
+
+    <button class="export-btn" id="btnDocx" data-format="docx">
+      <span class="btn-icon">📄</span>
+      <div class="btn-text">
+        <span class="btn-title">Word Document</span>
+        <span class="btn-sub">.docx file</span>
+      </div>
+    </button>
+
+    <button class="export-btn" id="btnHtmlSingle" data-format="html_single">
+      <span class="btn-icon">🌐</span>
+      <div class="btn-text">
+        <span class="btn-title">Single Webpage</span>
+        <span class="btn-sub">.html – images embedded</span>
+      </div>
+    </button>
+
+    <button class="export-btn" id="btnHtmlLinked" data-format="html_linked">
+      <span class="btn-icon">🗂️</span>
+      <div class="btn-text">
+        <span class="btn-title">Webpage + Images</span>
+        <span class="btn-sub">.zip – images folder separate</span>
+      </div>
+    </button>
+  </div>
+
+  <div id="status" class="status hidden"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
