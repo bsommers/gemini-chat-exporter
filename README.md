@@ -108,6 +108,12 @@ npm test
 npm run build
 ```
 
+## Documentation
+
+- [Build & Packaging Guide](docs/BUILD_AND_PACKAGING.md) — Packaging pipeline, clean `dist/unpacked`, and distribution archives.
+- [Architecture & Modernization Reference](docs/ARCHITECTURE.md) — DOM selectors, KaTeX math parsing, thinking blocks, and intermediate data schema.
+- [Security Notes](docs/SECURITY.md) — Manifest V3 permissions, threat model, and zero-telemetry design.
+
 ---
 
 ## License
