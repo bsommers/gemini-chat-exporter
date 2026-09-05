@@ -79,12 +79,18 @@ async function exportDocx(chatData) {
         if (tag === 'pre') {
             const codeEl = node.querySelector('code') || node;
             const codeText = codeEl.textContent || '';
-            return [new Paragraph({
-                children: [new TextRun({
-                    text: codeText,
+            const lines = codeText.split('\n');
+            const childrenRuns = [];
+            for (let i = 0; i < lines.length; i++) {
+                childrenRuns.push(new TextRun({
+                    text: lines[i],
                     font: 'Courier New',
-                    size: 18
-                })],
+                    size: 18,
+                    break: i > 0 ? 1 : undefined
+                }));
+            }
+            return [new Paragraph({
+                children: childrenRuns,
                 shading: { type: ShadingType.SOLID, color: 'F0F0F0' },
                 spacing: { before: 120, after: 120 },
                 style: 'Normal'

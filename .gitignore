@@ -1,6 +1,12 @@
-lib/
+# Build and dependencies
+node_modules/
+dist/
+.superpowers/
+
+# Generated files
 *.zip
 *.docx
 *.md~
 .DS_Store
 Thumbs.db
+
