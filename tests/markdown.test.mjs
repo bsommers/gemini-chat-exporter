@@ -61,6 +61,26 @@ test('exportMarkdown formats thinking process cleanly', () => {
     assert.ok(md.includes('Here is the final answer.'));
 });
 
+test('exportMarkdown formats thinking process without duplicating summary when thought-content is absent', () => {
+    const exportMarkdown = setupExporter();
+    const chatData = {
+        title: 'Thinking Test No Content Wrapper',
+        turns: [
+            {
+                role: 'model',
+                text: '',
+                html: '<details class="gemini-thought"><summary>Thinking Process</summary><p>Raw reasoning text here.</p></details>'
+            }
+        ],
+        images: []
+    };
+
+    const md = exportMarkdown(chatData);
+    const occurrences = (md.match(/Thinking Process/g) || []).length;
+    assert.equal(occurrences, 1, 'Summary should only appear once in markdown output');
+    assert.ok(md.includes('Raw reasoning text here.'));
+});
+
 test('exportMarkdown preserves latex math spans without escaping', () => {
     const exportMarkdown = setupExporter();
     const chatData = {

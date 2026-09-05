@@ -40,14 +40,16 @@ function exportMarkdown(chatData) {
             const tableLines = [];
             let hasHeader = false;
 
+            let firstRowCellCount = 0;
             for (let i = 0; i < rows.length; i++) {
                 const tr = rows[i];
                 const cells = Array.from(tr.querySelectorAll('th, td'));
                 if (cells.length === 0) continue;
+                if (!firstRowCellCount) firstRowCellCount = cells.length;
 
                 const rowContent = '| ' + cells.map(c => {
                     const cellText = td.turndown(c.innerHTML).replace(/\n+/g, ' ').trim();
-                    return cellText || ' ';
+                    return cellText.replace(/\|/g, '\\|') || ' ';
                 }).join(' | ') + ' |';
 
                 tableLines.push(rowContent);
@@ -60,8 +62,7 @@ function exportMarkdown(chatData) {
             }
 
             if (!hasHeader && tableLines.length > 0) {
-                const firstCells = Array.from(rows[0].querySelectorAll('th, td'));
-                const delimiter = '| ' + firstCells.map(() => '---').join(' | ') + ' |';
+                const delimiter = '| ' + Array.from({ length: firstRowCellCount || 1 }).map(() => '---').join(' | ') + ' |';
                 tableLines.splice(1, 0, delimiter);
             }
 
@@ -74,7 +75,9 @@ function exportMarkdown(chatData) {
         filter: node => node.nodeName === 'DETAILS' && node.classList.contains('gemini-thought'),
         replacement: (content, node) => {
             const summary = node.querySelector('summary')?.textContent?.trim() || 'Thinking Process';
-            const contentEl = node.querySelector('.thought-content') || node;
+            const clone = node.cloneNode(true);
+            clone.querySelector('summary')?.remove();
+            const contentEl = clone.querySelector('.thought-content') || clone;
             const inner = td.turndown(contentEl.innerHTML).trim();
             const quoted = inner.split('\n').map(l => `> ${l}`).join('\n');
             return `\n\n> **${summary}:**\n${quoted}\n\n`;
@@ -132,7 +135,7 @@ function exportMarkdown(chatData) {
             lines.push('');
 
             // If turn has a structured thought property and not already in HTML details
-            if (turn.thought && !turn.html.includes('gemini-thought')) {
+            if (turn.thought && !(turn.html || '').includes('gemini-thought')) {
                 const quotedThought = turn.thought.split('\n').map(l => `> ${l}`).join('\n');
                 lines.push(`> **Thinking Process:**\n${quotedThought}\n`);
             }
