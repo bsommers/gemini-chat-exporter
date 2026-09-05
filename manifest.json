@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Gemini Chat Exporter",
-  "version": "1.0.0",
-  "description": "Export Gemini chat sessions to Markdown, Word Doc, HTML, or HTML+Images.",
+  "version": "1.1.0",
+  "description": "Export Gemini chat sessions to Markdown, Word Doc, HTML, HTML+Images, or JSON.",
   "permissions": ["downloads", "scripting", "activeTab"],
   "host_permissions": ["https://gemini.google.com/*"],
   "action": {
@@ -27,11 +27,5 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  },
-  "web_accessible_resources": [
-    {
-      "resources": ["lib/*", "exporters/*"],
-      "matches": ["https://gemini.google.com/*"]
-    }
-  ]
+  }
 }
