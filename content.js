@@ -39,7 +39,14 @@
      */
     function extractConversationTitle(firstUserText = '') {
         const sidebarTitleEl = document.querySelector(
-            'conversation-item.selected .title, [data-test-id="conversation-title"], .chat-history .selected-chat, .conversation.selected'
+            'conversation-item.selected [data-test-id="conversation-title"], ' +
+            'conversation-item.selected .title, ' +
+            '.conversation-item.selected [data-test-id="conversation-title"], ' +
+            '.conversation-item.selected .title, ' +
+            '.conversation.selected [data-test-id="conversation-title"], ' +
+            '.conversation.selected .title, ' +
+            '[aria-selected="true"] [data-test-id="conversation-title"], ' +
+            '.chat-history .selected-chat'
         );
         const sidebarTitle = sidebarTitleEl?.textContent?.trim();
         if (sidebarTitle && sidebarTitle.length > 1) {
@@ -52,8 +59,16 @@
             return headerTitle;
         }
 
-        if (firstUserText && firstUserText.length > 0) {
-            const truncated = firstUserText.replace(/\s+/g, ' ').trim().slice(0, 50);
+        let userText = (firstUserText || '').trim();
+        if (!userText) {
+            const firstQueryEl = document.querySelector(
+                'user-query .query-text, user-query [data-query-text], user-query'
+            );
+            userText = firstQueryEl?.textContent?.trim() || '';
+        }
+
+        if (userText && userText.length > 0) {
+            const truncated = userText.replace(/\s+/g, ' ').trim().slice(0, 50);
             if (truncated.length > 0) return truncated;
         }
 
@@ -77,10 +92,13 @@
     function cleanCodeBlocks(container) {
         const codeBlocks = Array.from(container.querySelectorAll('code-block'));
         for (const cb of codeBlocks) {
+            cb.querySelectorAll('button, .code-block-decoration').forEach(el => el.remove());
             const preEl = cb.querySelector('pre') || cb.querySelector('code');
+            const langClassEl = cb.matches?.('[class*="language-"]') ? cb : cb.querySelector('[class*="language-"]');
+            const langMatch = langClassEl?.className?.match?.(/language-([a-zA-Z0-9_+-]+)/);
             const lang = cb.getAttribute('lang') ||
                 cb.getAttribute('data-language') ||
-                cb.querySelector('[class*="language-"]')?.className.match(/language-(\w+)/)?.[1] ||
+                (langMatch ? langMatch[1] : '') ||
                 '';
             const codeText = preEl ? preEl.textContent : cb.textContent;
             const replacement = document.createElement('pre');
@@ -255,18 +273,24 @@
         }
 
         // Fetch images in parallel with concurrency cap
-        const fetchPromises = images.map(async (img) => {
-            const base64 = await imgToBase64(img.src);
-            return {
-                id: img.id,
-                src: img.src,
-                alt: img.alt,
-                base64: base64 || null,
-                ext: img.ext || 'png'
-            };
-        });
-
-        const resolvedImages = await Promise.all(fetchPromises);
+        const CONCURRENCY_LIMIT = 5;
+        const resolvedImages = [];
+        for (let i = 0; i < images.length; i += CONCURRENCY_LIMIT) {
+            const chunk = images.slice(i, i + CONCURRENCY_LIMIT);
+            const chunkResults = await Promise.all(
+                chunk.map(async (img) => {
+                    const base64 = await imgToBase64(img.src);
+                    return {
+                        id: img.id,
+                        src: img.src,
+                        alt: img.alt,
+                        base64: base64 || null,
+                        ext: img.ext || 'png'
+                    };
+                })
+            );
+            resolvedImages.push(...chunkResults);
+        }
         const title = extractConversationTitle(firstUserText);
 
         return { title, turns, images: resolvedImages };
