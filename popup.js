@@ -91,6 +91,13 @@ document.querySelectorAll('.export-btn').forEach(btn => {
                 .replace(/\s+/g, '-')
                 .substring(0, 60) || 'gemini-chat';
 
+            if (format === 'copy') {
+                const md = exportMarkdown(chatData);
+                await navigator.clipboard.writeText(md);
+                showStatus('✓ Copied Markdown to clipboard!', 'success');
+                return;
+            }
+
             let filename, blob;
 
             switch (format) {
@@ -98,6 +105,12 @@ document.querySelectorAll('.export-btn').forEach(btn => {
                     const md = exportMarkdown(chatData);
                     filename = `${safeName}.md`;
                     blob = new Blob([md], { type: 'text/markdown' });
+                    break;
+                }
+                case 'json': {
+                    const jsonStr = exportJson(chatData);
+                    filename = `${safeName}.json`;
+                    blob = new Blob([jsonStr], { type: 'application/json' });
                     break;
                 }
                 case 'docx': {

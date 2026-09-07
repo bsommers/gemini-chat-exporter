@@ -4,7 +4,7 @@
 'use strict';
 
 function exportHtmlSingle(chatData) {
-    const { title, turns, images } = chatData;
+    const { title, turns, images = [] } = chatData;
 
     // Build image lookup map
     const imageMap = {};
@@ -13,8 +13,9 @@ function exportHtmlSingle(chatData) {
     }
 
     function processHtml(html) {
-        // Replace image placeholders with embedded base64
-        return html.replace(/src="__IMAGE_PLACEHOLDER__(image-\d+)"/g, (match, id) => {
+        if (!html) return '';
+        // Replace image placeholders with embedded base64 (supports relative or absolute origin in src)
+        return html.replace(/src="[^"]*__IMAGE_PLACEHOLDER__(image-\d+)"/g, (match, id) => {
             const imgMeta = imageMap[id];
             if (imgMeta?.base64) {
                 return `src="${imgMeta.base64}"`;
@@ -25,8 +26,17 @@ function exportHtmlSingle(chatData) {
 
     const turnsHtml = turns.map((turn, i) => {
         const isUser = turn.role === 'user';
+        let attachmentsHtml = '';
+        if (isUser && turn.attachments && turn.attachments.length > 0) {
+            attachmentsHtml = '<div class="user-attachments">' + turn.attachments.map(att => {
+                const imgMeta = imageMap[att.id];
+                const src = imgMeta?.base64 || '';
+                return `<img src="${src}" alt="${escapeHtml(att.alt || '')}" class="user-attached-img" />`;
+            }).join('') + '</div>';
+        }
+
         const html = isUser
-            ? `<p class="user-text">${escapeHtml(turn.text)}</p>`
+            ? `<p class="user-text">${escapeHtml(turn.text)}</p>${attachmentsHtml}`
             : processHtml(turn.html);
 
         return `
@@ -44,7 +54,7 @@ function exportHtmlSingle(chatData) {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${escapeHtml(title)}</title>
+  <title>${escapeHtml(title || 'Gemini Chat')}</title>
   <style>
     ${getStyles()}
   </style>
@@ -53,7 +63,7 @@ function exportHtmlSingle(chatData) {
   <div class="page">
     <div class="page-header">
       <div class="page-logo">✦ Gemini</div>
-      <h1 class="page-title">${escapeHtml(title)}</h1>
+      <h1 class="page-title">${escapeHtml(title || 'Gemini Chat')}</h1>
       <div class="page-meta">Exported on ${new Date().toLocaleString()}</div>
     </div>
     <div class="conversation">
@@ -65,7 +75,7 @@ function exportHtmlSingle(chatData) {
 }
 
 function escapeHtml(str) {
-    return String(str)
+    return String(str || '')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
@@ -147,6 +157,8 @@ function getStyles() {
       padding: 14px 18px;
     }
     .user-text { white-space: pre-wrap; }
+    .user-attachments { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+    .user-attached-img { max-width: 250px; border-radius: 8px; border: 1px solid rgba(189,147,249,0.3); }
     .turn-model .turn-body p { margin-bottom: 12px; }
     .turn-model .turn-body p:last-child { margin-bottom: 0; }
     .turn-model .turn-body ul,
@@ -212,5 +224,37 @@ function getStyles() {
       color: #8ab4f8;
       font-weight: 600;
     }
+    /* Thinking Process Details */
+    details.gemini-thought {
+      margin: 12px 0;
+      border: 1px solid rgba(138, 180, 248, 0.2);
+      border-radius: 8px;
+      background: rgba(138, 180, 248, 0.05);
+      padding: 8px 12px;
+    }
+    details.gemini-thought summary {
+      cursor: pointer;
+      color: #8ab4f8;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    details.gemini-thought .thought-content {
+      margin-top: 8px;
+      font-size: 13px;
+      color: #aab4d4;
+      border-top: 1px dashed rgba(138, 180, 248, 0.15);
+      padding-top: 8px;
+    }
+    .latex-math {
+      font-family: 'Cambria Math', 'KaTeX_Main', serif;
+      color: #8ab4f8;
+    }
   `;
+}
+
+if (typeof window !== 'undefined') {
+    window.exportHtmlSingle = exportHtmlSingle;
+}
+if (typeof globalThis !== 'undefined') {
+    globalThis.exportHtmlSingle = exportHtmlSingle;
 }

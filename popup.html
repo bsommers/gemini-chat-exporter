@@ -61,6 +61,22 @@
         <span class="btn-sub">.zip – images folder separate</span>
       </div>
     </button>
+
+    <button class="export-btn" id="btnJson" data-format="json">
+      <span class="btn-icon">📦</span>
+      <div class="btn-text">
+        <span class="btn-title">JSON</span>
+        <span class="btn-sub">.json – structured turns & metadata</span>
+      </div>
+    </button>
+
+    <button class="export-btn copy-btn" id="btnCopy" data-format="copy">
+      <span class="btn-icon">📋</span>
+      <div class="btn-text">
+        <span class="btn-title">Copy to Clipboard</span>
+        <span class="btn-sub">Copy chat as Markdown</span>
+      </div>
+    </button>
   </div>
 
   <div id="status" class="status hidden"></div>
@@ -73,6 +89,7 @@
   <script src="exporters/html_single.js"></script>
   <script src="exporters/html_linked.js"></script>
   <script src="exporters/docx_export.js"></script>
+  <script src="exporters/json_export.js"></script>
   <script src="popup.js"></script>
 </body>
 

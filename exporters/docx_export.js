@@ -4,10 +4,10 @@
 'use strict';
 
 async function exportDocx(chatData) {
-    const { title, turns, images } = chatData;
+    const { title, turns, images = [] } = chatData;
     const {
         Document, Paragraph, TextRun, HeadingLevel, ImageRun,
-        Packer, AlignmentType, BorderStyle, Table, TableRow, TableCell,
+        Packer, BorderStyle, Table, TableRow, TableCell,
         WidthType, ShadingType
     } = docx;
 
@@ -27,9 +27,102 @@ async function exportDocx(chatData) {
         return bytes.buffer;
     }
 
+    // Extract image dimensions from raw buffer to preserve aspect ratio
+    function getImageDimensions(buffer) {
+        try {
+            const view = new DataView(buffer);
+            // PNG signature check: 0x89504E47
+            if (view.byteLength >= 24 && view.getUint32(0) === 0x89504E47) {
+                return {
+                    width: view.getUint32(16),
+                    height: view.getUint32(20)
+                };
+            }
+            // GIF signature check: 'GIF87a' or 'GIF89a'
+            if (view.byteLength >= 10 &&
+                view.getUint8(0) === 0x47 && view.getUint8(1) === 0x49 && view.getUint8(2) === 0x46) {
+                return {
+                    width: view.getUint16(6, true),
+                    height: view.getUint16(8, true)
+                };
+            }
+            // JPEG signature check: 0xFFD8
+            if (view.byteLength >= 4 && view.getUint16(0) === 0xFFD8) {
+                let offset = 2;
+                while (offset < view.byteLength) {
+                    if (view.getUint8(offset) !== 0xFF) break;
+                    const marker = view.getUint8(offset + 1);
+                    if ((marker >= 0xC0 && marker <= 0xC3) || (marker >= 0xC5 && marker <= 0xC7) ||
+                        (marker >= 0xC9 && marker <= 0xCB) || (marker >= 0xCD && marker <= 0xCF)) {
+                        return {
+                            height: view.getUint16(offset + 5),
+                            width: view.getUint16(offset + 7)
+                        };
+                    }
+                    const length = view.getUint16(offset + 2);
+                    offset += 2 + length;
+                }
+            }
+        } catch (_) {
+            // Fallback
+        }
+        return null;
+    }
+
+    // Fit dimensions within bounding box while strictly preserving aspect ratio
+    function fitDimensions(origWidth, origHeight, maxWidth = 500, maxHeight = 400) {
+        if (!origWidth || !origHeight || origWidth <= 0 || origHeight <= 0) {
+            return { width: maxWidth, height: Math.round(maxWidth * 0.6) };
+        }
+        const ratio = Math.min(maxWidth / origWidth, maxHeight / origHeight, 1);
+        return {
+            width: Math.max(1, Math.round(origWidth * ratio)),
+            height: Math.max(1, Math.round(origHeight * ratio))
+        };
+    }
+
+    // Recursively process unordered and ordered lists without duplicating nested items
+    function processList(listEl, isOrdered, level = 0) {
+        const paragraphs = [];
+        let counter = 1;
+        const listChildren = Array.from(listEl.children);
+
+        for (const child of listChildren) {
+            if (child.tagName.toLowerCase() === 'li') {
+                // Find direct nested lists inside this li
+                const nestedLists = Array.from(child.children).filter(c =>
+                    ['ul', 'ol'].includes(c.tagName.toLowerCase())
+                );
+
+                // Clone li to extract text without nested list content
+                const clone = child.cloneNode(true);
+                clone.querySelectorAll('ul, ol').forEach(nested => nested.remove());
+                const liText = (clone.textContent || '').trim();
+
+                const indentLevel = level * 360; // 360 twips indentation per level
+                const bullet = isOrdered ? `${counter}. ` : '• ';
+
+                paragraphs.push(new Paragraph({
+                    children: [
+                        new TextRun({ text: bullet, bold: true }),
+                        new TextRun({ text: liText })
+                    ],
+                    indent: indentLevel > 0 ? { left: indentLevel } : undefined,
+                    spacing: { after: 60 }
+                }));
+                counter++;
+
+                // Process nested lists
+                for (const nested of nestedLists) {
+                    paragraphs.push(...processList(nested, nested.tagName.toLowerCase() === 'ol', level + 1));
+                }
+            }
+        }
+        return paragraphs;
+    }
+
     /**
-     * Parse HTML into docx Paragraph/Run objects (simplified parser).
-     * Handles: p, h1-h6, ul/ol/li, pre/code, strong, em, a, br, img
+     * Parse HTML into docx Paragraph/Run objects.
      */
     function htmlToDocxChildren(htmlStr) {
         const div = document.createElement('div');
@@ -57,6 +150,31 @@ async function exportDocx(chatData) {
 
         const tag = node.tagName.toLowerCase();
 
+        // Details / Thinking Process block
+        if (tag === 'details' && node.classList.contains('gemini-thought')) {
+            const summary = node.querySelector('summary')?.textContent || 'Thinking Process';
+            const contentEl = node.querySelector('.thought-content');
+            const thoughtText = contentEl
+                ? contentEl.textContent.trim()
+                : node.textContent.replace(summary, '').trim();
+
+            return [
+                new Paragraph({
+                    children: [
+                        new TextRun({ text: `💭 ${summary}`, bold: true, italics: true, color: '555555', size: 20 })
+                    ],
+                    spacing: { before: 100, after: 60 }
+                }),
+                new Paragraph({
+                    children: [
+                        new TextRun({ text: thoughtText, italics: true, color: '777777', size: 18 })
+                    ],
+                    indent: { left: 360 },
+                    spacing: { after: 120 }
+                })
+            ];
+        }
+
         // Headings
         if (/^h[1-6]$/.test(tag)) {
             const level = parseInt(tag[1]);
@@ -79,12 +197,18 @@ async function exportDocx(chatData) {
         if (tag === 'pre') {
             const codeEl = node.querySelector('code') || node;
             const codeText = codeEl.textContent || '';
-            return [new Paragraph({
-                children: [new TextRun({
-                    text: codeText,
+            const lines = codeText.split('\n');
+            const childrenRuns = [];
+            for (let i = 0; i < lines.length; i++) {
+                childrenRuns.push(new TextRun({
+                    text: lines[i],
                     font: 'Courier New',
-                    size: 18
-                })],
+                    size: 18,
+                    break: i > 0 ? 1 : undefined
+                }));
+            }
+            return [new Paragraph({
+                children: childrenRuns,
                 shading: { type: ShadingType.SOLID, color: 'F0F0F0' },
                 spacing: { before: 120, after: 120 },
                 style: 'Normal'
@@ -101,27 +225,33 @@ async function exportDocx(chatData) {
             })];
         }
 
-        // Image (with placeholder id)
+        // Image
         if (tag === 'img') {
             const src = node.getAttribute('src') || '';
+            const exporterId = node.getAttribute('data-exporter-id');
             const idMatch = src.match(/__IMAGE_PLACEHOLDER__(image-\d+)/);
-            if (idMatch) {
-                const imgMeta = imageMap[idMatch[1]];
+            const imageId = exporterId || (idMatch ? idMatch[1] : null);
+
+            if (imageId) {
+                const imgMeta = imageMap[imageId];
                 if (imgMeta?.base64) {
                     try {
                         const arrayBuffer = base64ToArrayBuffer(imgMeta.base64);
                         const mimeType = imgMeta.base64.match(/^data:([^;]+)/)?.[1] || 'image/png';
                         const typeMap = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'png' };
                         const imgType = typeMap[mimeType] || 'png';
+                        const dims = getImageDimensions(arrayBuffer);
+                        const { width, height } = fitDimensions(dims?.width, dims?.height);
+
                         return [new Paragraph({
                             children: [new ImageRun({
                                 data: arrayBuffer,
-                                transformation: { width: 500, height: 300 },
+                                transformation: { width, height },
                                 type: imgType
                             })]
                         })];
                     } catch (e) {
-                        return [new Paragraph({ text: `[Image: ${imgMeta.alt || idMatch[1]}]` })];
+                        return [new Paragraph({ text: `[Image: ${imgMeta?.alt || imageId}]` })];
                     }
                 }
             }
@@ -142,22 +272,12 @@ async function exportDocx(chatData) {
 
         // Unordered list
         if (tag === 'ul') {
-            return Array.from(node.querySelectorAll('li')).map(li =>
-                new Paragraph({
-                    text: '• ' + (li.innerText || li.textContent).trim(),
-                    spacing: { after: 60 }
-                })
-            );
+            return processList(node, false, 0);
         }
 
         // Ordered list
         if (tag === 'ol') {
-            return Array.from(node.querySelectorAll('li')).map((li, i) =>
-                new Paragraph({
-                    text: `${i + 1}. ` + (li.innerText || li.textContent).trim(),
-                    spacing: { after: 60 }
-                })
-            );
+            return processList(node, true, 0);
         }
 
         // Blockquote
@@ -231,7 +351,7 @@ async function exportDocx(chatData) {
 
     // Title
     children.push(new Paragraph({
-        text: title,
+        text: title || 'Gemini Chat',
         heading: HeadingLevel.TITLE,
         spacing: { after: 200 }
     }));
@@ -269,8 +389,36 @@ async function exportDocx(chatData) {
         if (isUser) {
             children.push(new Paragraph({
                 children: [new TextRun({ text: turn.text, size: 24 })],
-                spacing: { after: 200 }
+                spacing: { after: turn.attachments && turn.attachments.length > 0 ? 100 : 200 }
             }));
+
+            // Handle user attachments
+            if (turn.attachments && turn.attachments.length > 0) {
+                for (const att of turn.attachments) {
+                    const imgMeta = imageMap[att.id];
+                    if (imgMeta?.base64) {
+                        try {
+                            const arrayBuffer = base64ToArrayBuffer(imgMeta.base64);
+                            const mimeType = imgMeta.base64.match(/^data:([^;]+)/)?.[1] || 'image/png';
+                            const typeMap = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'png' };
+                            const imgType = typeMap[mimeType] || 'png';
+                            const dims = getImageDimensions(arrayBuffer);
+                            const { width, height } = fitDimensions(dims?.width, dims?.height);
+
+                            children.push(new Paragraph({
+                                children: [new ImageRun({
+                                    data: arrayBuffer,
+                                    transformation: { width, height },
+                                    type: imgType
+                                })],
+                                spacing: { after: 100 }
+                            }));
+                        } catch (e) {
+                            children.push(new Paragraph({ text: `[Attachment: ${att.alt || att.id}]` }));
+                        }
+                    }
+                }
+            }
         } else {
             const docxNodes = htmlToDocxChildren(turn.html);
             for (const node of docxNodes) {
@@ -286,10 +434,17 @@ async function exportDocx(chatData) {
     }
 
     const doc = new Document({
-        title,
+        title: title || 'Gemini Chat',
         creator: 'Gemini Chat Exporter',
         sections: [{ children }]
     });
 
     return await Packer.toBlob(doc);
+}
+
+if (typeof window !== 'undefined') {
+    window.exportDocx = exportDocx;
+}
+if (typeof globalThis !== 'undefined') {
+    globalThis.exportDocx = exportDocx;
 }
