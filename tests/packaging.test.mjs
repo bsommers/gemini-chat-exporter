@@ -22,6 +22,7 @@ test('npm run build creates dist/unpacked with valid manifest and no development
     assert.ok(fs.existsSync('dist/unpacked/icons/icon16.png'), 'icon16 exists');
     assert.ok(fs.existsSync('dist/unpacked/icons/icon48.png'), 'icon48 exists');
     assert.ok(fs.existsSync('dist/unpacked/icons/icon128.png'), 'icon128 exists');
+    assert.ok(fs.existsSync('dist/unpacked/LICENSE'), 'LICENSE exists in unpacked');
 
     // Verify development files are EXCLUDED from dist/unpacked
     assert.ok(!fs.existsSync('dist/unpacked/tests'), 'tests directory excluded');

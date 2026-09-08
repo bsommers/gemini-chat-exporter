@@ -29,7 +29,8 @@ const filesToCopy = [
     'content.js',
     'popup.html',
     'popup.css',
-    'popup.js'
+    'popup.js',
+    'LICENSE'
 ];
 
 const dirsToCopy = [

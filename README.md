@@ -4,7 +4,7 @@
 
 A privacy-first, zero-telemetry Chrome extension (Manifest V3) that exports any [Gemini](https://gemini.google.com) conversation to Markdown, Word Document, Webpage, ZIP, or structured JSON in one click.
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ---
 
@@ -118,6 +118,6 @@ npm run build
 
 ## License
 
-GPL-3.0 — see [LICENSE](LICENSE).
+Apache-2.0 — see [LICENSE](LICENSE).
 
 Copyright © 2024–2026 Bill Sommers
