@@ -1,121 +1,207 @@
-# Architecture & Modernization Reference
+# Gemini Chat Exporter: Architecture Specification
 
-This document details the internal architecture, modern DOM selectors, data structures, and pipeline flow for Gemini Chat Exporter v1.1.0.
+## 1. Architectural Overview
 
----
+**Gemini Chat Exporter** is a Manifest V3 Chrome extension architected to extract, normalize, and export structured conversations from Google Gemini (`https://gemini.google.com`) into multiple document formats entirely on the user's local machine.
 
-## 🏛️ System Architecture
+```mermaid
+graph TD
+    subgraph Browser Tab Context [gemini.google.com]
+        DOM[Gemini Chat DOM Tree]
+        CS[content.js / extractor.ts]
+        CS_T[Thought Scraper]
+        CS_M[Math Scraper]
+        CS_C[Citation Scraper]
+        CS_P[Python Execution Scraper]
+        CS_U[User Attachment Scraper]
+        CS_I[Image Scraper & Base64 Encoder]
+    end
 
+    subgraph Popup Context [popup.html / popup.js]
+        P_UI[Popup UI Controller]
+        EX_MD[Markdown Exporter]
+        EX_DOCX[DOCX Exporter]
+        EX_HTML_S[HTML Single Exporter]
+        EX_HTML_L[HTML Linked ZIP Exporter]
+        EX_JSON[JSON Exporter]
+        SAN[DOMPurify Sanitizer]
+    end
+
+    subgraph Service Worker [background.js]
+        SW[Lifecycle & Context Menu Handler]
+    end
+
+    subgraph Chrome Platform APIs
+        API_TABS[chrome.tabs]
+        API_SCR[chrome.scripting]
+        API_DL[chrome.downloads]
+        API_MSG[chrome.runtime]
+    end
+
+    %% Interactions
+    P_UI -->|Query active tab| API_TABS
+    P_UI -->|Inject if missing| API_SCR
+    P_UI -->|extractChat msg| CS
+    CS --> CS_T & CS_M & CS_C & CS_P & CS_U & CS_I
+    CS -->|Query nodes| DOM
+    CS -->|Structured ChatData| P_UI
+    P_UI --> SAN
+    SAN --> EX_MD & EX_DOCX & EX_HTML_S & EX_HTML_L & EX_JSON
+    EX_MD & EX_DOCX & EX_HTML_S & EX_HTML_L & EX_JSON -->|Blob / Object URL| API_DL
 ```
-                       ┌─────────────────────────┐
-                       │  gemini.google.com Tab  │
-                       │       (content.js)      │
-                       └────────────┬────────────┘
-                                    │
-                                    │ 1. Scrapes conversation turns
-                                    │    Processes KaTeX, code blocks,
-                                    │    thinking blocks, user attachments
-                                    ▼
-┌────────────────────────────────────────────────────────┐
-│                      Extension Popup                   │
-│                        (popup.js)                      │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │                   Exporters                      │  │
-│  │ • markdown.js (Turndown + GFM table / math rules)│  │
-│  │ • json_export.js (Structured JSON schema)        │  │
-│  │ • docx_export.js (docx.js + proportional bounds) │  │
-│  │ • html_single.js & html_linked.js (JSZip)        │  │
-│  └──────────────────────────────────────────────────┘  │
-└────────────┬─────────────────────────────┬─────────────┘
-             │                             │
-             ▼                             ▼
-   chrome.downloads.download()    navigator.clipboard.writeText()
+
+---
+
+## 2. Component Boundaries & Context Separation
+
+### 2.1 Content Script Context (`src/content/`)
+- **Execution Target:** Injected into `https://gemini.google.com/*` tabs.
+- **Execution Model:** Runs in an isolated world with access to the Gemini web page's DOM.
+- **Responsibilities:**
+  - Locate conversation nodes (`user-query`, `model-response`).
+  - Extract user prompt text and multimodal attachments (images, uploaded files, PDFs).
+  - Extract model response text, HTML, and specialized children:
+    - Thinking & reasoning traces (`<thought-box>`, `.thought-container`).
+    - LaTeX / KaTeX mathematical formulas.
+    - Code blocks and interactive Python execution output cells.
+    - Web search citations, grounding chips, and source links.
+  - Asynchronously fetch embedded response images (using session cookies) and convert them to base64 Data URIs with proper MIME types.
+  - Return normalized, strongly typed `ChatData` JSON structure to the caller.
+
+### 2.2 Popup Context (`src/popup/`)
+- **Execution Target:** Opened when user clicks the extension action icon in the toolbar.
+- **Execution Model:** Full DOM-enabled extension window (`popup.html`).
+- **Responsibilities:**
+  - Query the currently active Gemini tab via `chrome.tabs.query`.
+  - Ensure `content.js` is active; on-demand inject via `chrome.scripting.executeScript` if the tab predates extension installation.
+  - Request chat extraction via `chrome.tabs.sendMessage`.
+  - Provide interactive user controls:
+    - Export format triggers (Markdown, Word .docx, Single HTML, ZIP, JSON).
+    - Export options (e.g. Include Thinking Process, Theme mode).
+  - Execute exporter pipelines (`src/exporters/`) within the popup's DOM environment where `document`, `Blob`, `FileReader`, and `URL.createObjectURL` are available.
+  - Dispatch file downloads via `chrome.downloads.download`.
+
+### 2.3 Background Service Worker (`src/background/`)
+- **Execution Target:** Ephemeral Manifest V3 background service worker.
+- **Execution Model:** Event-driven, non-persistent, DOM-free background thread.
+- **Responsibilities:**
+  - Extension lifecycle management (install, update).
+  - Optional context menu registration (e.g. "Export this chat").
+  - Strictly **no** DOM manipulation or global in-memory state persistence.
+
+---
+
+## 3. Data Pipeline & Message Passing Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Popup as Popup UI (popup.js)
+    participant Tabs as chrome.tabs / scripting
+    participant CS as Content Script (content.js)
+    participant DOM as Gemini Page DOM
+    participant Exporter as Exporter Engine & Sanitizer
+    participant Downloads as chrome.downloads
+
+    User->>Popup: Clicks extension icon
+    Popup->>Tabs: Query active tab (URL matches gemini.google.com)
+    Tabs-->>Popup: Tab Info
+    Popup->>CS: sendMessage({ action: "getTitle" })
+    alt Content script not yet injected
+        Popup->>Tabs: scripting.executeScript(content.js)
+        Popup->>CS: retry sendMessage({ action: "getTitle" })
+    end
+    CS-->>Popup: Return detected chat title
+    Popup->>User: Renders title & enabled format buttons
+
+    User->>Popup: Clicks format button (e.g. Markdown)
+    Popup->>CS: sendMessage({ action: "extractChat", options })
+    CS->>DOM: Walk DOM tree, extract turns, math, citations, thoughts
+    CS->>CS: imgToBase64() for embedded images
+    CS-->>Popup: Resolves ChatData object
+    Popup->>Exporter: transformToFormat(ChatData)
+    Exporter->>Exporter: DOMPurify sanitization & formatting
+    Exporter-->>Popup: Return Blob / text
+    Popup->>Downloads: chrome.downloads.download({ url: objectUrl, filename })
+    Downloads-->>User: File saved to Downloads folder
+    Popup->>User: Display success checkmark
 ```
 
 ---
 
-## 🔍 Modern DOM Extraction Logic (`content.js`)
+## 4. Normalized Data Schema (`ChatData`)
 
-Gemini's web interface (`gemini.google.com`) uses custom elements and web components:
+All scrapers produce and all exporters consume a unified, immutable TypeScript data schema:
 
-### 1. Conversation Scoping
-- **Container:** `infinite-scroller.chat-history` (or `body` as fallback)
-- **User Turn:** `<user-query>`
-- **Model Turn:** `<model-response>`
+```typescript
+export interface Citation {
+  index: number;
+  title: string;
+  url: string;
+  snippet?: string;
+}
 
-### 2. Conversation Title Extraction
-Title detection uses a robust cascade to find the active conversation:
-1. Active selected sidebar conversation link (`[data-test-id="conversation-title"]`, selected anchor)
-2. Main page conversation title header (`header .title`, `h1`)
-3. First user query snippet (truncated to 40 characters)
-4. Sanitized `document.title` (ignoring generic values like "Gemini")
+export interface Attachment {
+  type: 'image' | 'file' | 'audio';
+  name?: string;
+  src?: string;
+  base64?: string;
+  mimeType?: string;
+}
 
-### 3. Code Block Cleaning (`cleanCodeBlocks`)
-- Queries all custom `code-block` elements directly in the cloned DOM tree.
-- Converts to standard `<pre><code class="language-...">`.
-- Normalizes language attributes and strips UI decorations (copy buttons, formatting buttons).
-- Accurately captures language identifiers with symbols (e.g. `c++`, `c#`).
+export interface CodeBlock {
+  language: string;
+  code: string;
+  executionOutput?: string;
+}
 
-### 4. KaTeX Math Extraction (`cleanKatexMath`)
-- Modern Gemini renders mathematical formulas using KaTeX.
-- Extraction inspects `<annotation encoding="application/x-tex">` or `[data-tex]`.
-- Distinguishes between:
-  - **Inline Math:** Wrapped in `$formula$`
-  - **Display Math:** Wrapped in `$$formula$$` (when parent is `.katex-display` or `display="block"`)
+export interface Turn {
+  id: string;
+  role: 'user' | 'model';
+  timestamp?: string;
+  text: string;
+  html: string;
+  thought?: {
+    text: string;
+    html: string;
+    duration?: string;
+  };
+  attachments?: Attachment[];
+  citations?: Citation[];
+  codeBlocks?: CodeBlock[];
+}
 
-### 5. Thinking Process Blocks (`processThinkingBlocks`)
-- Gemini 2.0+ reasoning/thinking blocks are extracted from `.thinking-process`, `<expandable-block>`, or `.thought-box`.
-- Preserved as standard HTML `<details class="gemini-thought"><summary>Thinking Process</summary><div class="thought-content">...</div></details>`.
-- Preserved across all exporters:
-  - **Markdown:** Fenced `<details class="gemini-thought">`
-  - **JSON:** Explicit `turn.thought` string field
-  - **DOCX:** Formatted with italics and distinct margin indentation
-  - **HTML:** Dark mode collapsible accordion styled box
+export interface ImageMeta {
+  id: string;
+  src: string;
+  alt: string;
+  base64: string | null;
+  mimeType: string;
+  ext: string;
+}
 
-### 6. Multimodal User Attachments
-- Identifies user-uploaded images and documents from `<user-query>`.
-- Stored on each turn as `turn.attachments: [{ type: 'image', id: 'image-0', alt: '...' }]`.
-- Concurrently downloaded via `fetch` with a bounded concurrency pool (`CONCURRENCY_LIMIT = 5`).
-
----
-
-## 📤 Intermediate Data Contract (`chatData`)
-
-The content script returns an intermediate data object consumed by all exporters:
-
-```json
-{
-  "title": "Quantum Computing Primer",
-  "turns": [
-    {
-      "role": "user",
-      "text": "Explain Shor's algorithm",
-      "attachments": []
-    },
-    {
-      "role": "model",
-      "text": "Shor's algorithm solves prime factorization...",
-      "html": "<p>Shor's algorithm solves prime factorization...</p>",
-      "thought": "The user is asking for a conceptual primer..."
-    }
-  ],
-  "images": [
-    {
-      "id": "image-0",
-      "src": "blob:https://gemini.google.com/...",
-      "base64": "data:image/png;base64,...",
-      "alt": "Quantum circuit diagram",
-      "ext": "png"
-    }
-  ]
+export interface ChatData {
+  title: string;
+  url?: string;
+  exportedAt: string;
+  geminiModelVersion?: string;
+  turns: Turn[];
+  images: ImageMeta[];
 }
 ```
 
 ---
 
-## 🔒 Security Architecture
+## 5. Security & Privacy Architecture
 
-1. **Manifest V3:** Adheres to modern Chrome Manifest V3 guidelines.
-2. **Quarantined Code:** `web_accessible_resources` is completely removed to prevent host page scripts from accessing internal extension files.
-3. **Local Processing:** No external servers, no cloud dependencies, zero telemetry.
-4. **Idempotency:** `window.__geminiExporterLoaded` guards protect against duplicate execution.
+1. **Zero External Network Calls:**
+   - The extension makes **zero** outbound network requests to third-party servers, analytics services, or external APIs.
+   - All transformations (Markdown, HTML, DOCX, ZIP, JSON) are computed entirely in memory on the client machine.
+2. **Credentialed Image Fetching:**
+   - Gemini images stored on internal Google CDNs require session cookies. `content.js` uses `fetch(img.src, { credentials: 'include' })` strictly for URLs already present in the Gemini DOM. Credentials are never stored, logged, or transferred.
+3. **Defense-in-Depth HTML Sanitization:**
+   - All HTML content rendered by Gemini is passed through DOMPurify before inclusion into exported HTML or DOCX files to prevent Cross-Site Scripting (XSS) vectors.
+4. **Principle of Least Privilege:**
+   - Host permissions are strictly locked to `https://gemini.google.com/*`.
+   - Permissions are restricted to `downloads`, `scripting`, `activeTab`, and `tabs`.
