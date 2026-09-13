@@ -1,15 +1,34 @@
 {
   "name": "gemini-chat-exporter",
   "version": "1.1.0",
-  "description": "Export Gemini chat sessions to Markdown, Word Doc, HTML, or JSON",
+  "description": "Export Gemini chat sessions to Markdown, Word Doc, HTML, HTML+Images, or JSON.",
   "type": "module",
+  "private": true,
+  "license": "GPL-3.0",
   "scripts": {
-    "test": "node --test tests/*.test.mjs",
-    "build": "node scripts/package.mjs",
-    "package": "node scripts/package.mjs"
+    "build": "npm run build:background && npm run build:content && npm run build:popup",
+    "build:background": "BUILD_ENTRY=background vite build",
+    "build:content": "BUILD_ENTRY=content vite build",
+    "build:popup": "BUILD_ENTRY=popup vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "jsdom": "^26.0.0"
+    "@types/chrome": "^0.0.280",
+    "@types/node": "^22.10.2",
+    "@types/turndown": "^5.0.6",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "vite-plugin-static-copy": "^2.2.0",
+    "vitest": "^2.1.8"
   },
-  "license": "GPL-3.0"
+  "dependencies": {
+    "docx": "^9.1.0",
+    "dompurify": "^3.2.3",
+    "jszip": "^3.10.1",
+    "turndown": "^7.2.0",
+    "turndown-plugin-gfm": "^1.0.2"
+  }
 }
