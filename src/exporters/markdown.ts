@@ -48,14 +48,15 @@ export function exportMarkdown(chatData: ChatData): string {
     }
   });
 
-  // Handle image placeholders
+  // Handle image placeholders. Read the raw `src` attribute rather than the
+  // `.src` IDL property - the latter resolves against the parsing document's
+  // base URI (e.g. `chrome-extension://<id>/__IMAGE_PLACEHOLDER__image-0`),
+  // which would corrupt the extracted placeholder id.
   td.addRule('imagePlaceholder', {
-    filter: (node) =>
-      node.nodeName === 'IMG' &&
-      !!(node as HTMLImageElement).src &&
-      (node as HTMLImageElement).src.includes('__IMAGE_PLACEHOLDER__'),
+    filter: (node) => node.nodeName === 'IMG' && !!(node as HTMLImageElement).getAttribute('src')?.includes('__IMAGE_PLACEHOLDER__'),
     replacement: (_content, node) => {
-      const id = (node as HTMLImageElement).src.replace('__IMAGE_PLACEHOLDER__', '');
+      const rawSrc = (node as HTMLImageElement).getAttribute('src') || '';
+      const id = rawSrc.replace('__IMAGE_PLACEHOLDER__', '');
       const imgMeta = images.find((i) => i.id === id);
       const alt = imgMeta?.alt || id;
       return `\n![${alt}](${id}.png)\n`;

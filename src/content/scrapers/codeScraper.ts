@@ -31,7 +31,9 @@ export function scrapeCode(node: Element, clone: HTMLElement): void {
     try {
       const preEl = cb.querySelector('pre') || cb.querySelector('code');
       const lang = detectLanguage(cb);
-      const codeText = preEl ? (preEl as HTMLElement).innerText : (cb as HTMLElement).innerText;
+      const codeText = preEl
+        ? (preEl as HTMLElement).innerText || preEl.textContent || ''
+        : (cb as HTMLElement).innerText || cb.textContent || '';
       const executionOutput = extractExecutionOutput(cb);
 
       const replacement = document.createElement('pre');

@@ -6,7 +6,10 @@ const THOUGHT_SELECTOR =
 function extractDuration(container: Element): string | null {
   const toggle = container.querySelector('.thought-toggle') || container;
   const text = toggle.textContent || '';
-  const match = text.match(/\(([^)]*\d[^)]*)\)/) || text.match(/(\d+\s*(?:s|sec|seconds?|m|min|minutes?))/i);
+  // Alternatives are ordered longest-first per prefix group (seconds before
+  // sec before s) since regex alternation takes the first matching branch,
+  // not the longest overall match.
+  const match = text.match(/\(([^)]*\d[^)]*)\)/) || text.match(/(\d+\s*(?:seconds?|sec|s|minutes?|min|m))/i);
   return match?.[1] ? match[1].trim() : null;
 }
 

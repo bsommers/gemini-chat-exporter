@@ -7,16 +7,30 @@ import { exportHtmlLinked } from '../exporters/htmlLinked';
 const statusEl = document.getElementById('status')!;
 const chatTitleEl = document.getElementById('chatTitle')!;
 
-function showStatus(msg: string, type: 'info' | 'error' | 'success' | 'loading' = 'info'): void {
+export function showStatus(msg: string, type: 'info' | 'error' | 'success' | 'loading' = 'info'): void {
   statusEl.textContent = msg;
   statusEl.className = `status ${type}`;
 }
 
-function setButtonsDisabled(disabled: boolean): void {
+export function setButtonsDisabled(disabled: boolean): void {
   document.querySelectorAll<HTMLButtonElement>('.export-btn').forEach((b) => (b.disabled = disabled));
 }
 
-async function getActiveGeminiTab(): Promise<chrome.tabs.Tab | null> {
+/**
+ * Builds a filesystem-safe filename stem from a chat title: strips
+ * anything but word chars/whitespace/hyphens, collapses whitespace to
+ * single hyphens, and caps length so exports never fail on odd titles.
+ */
+export function buildSafeFilename(title: string): string {
+  return (
+    title
+      .replace(/[^\w\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .substring(0, 60) || 'gemini-chat'
+  );
+}
+
+export async function getActiveGeminiTab(): Promise<chrome.tabs.Tab | null> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || !tab.url?.includes('gemini.google.com')) return null;
   return tab;
@@ -28,7 +42,7 @@ async function getActiveGeminiTab(): Promise<chrome.tabs.Tab | null> {
  * chrome.tabs.sendMessage throws "Receiving end does not exist".
  * We catch that and inject the script programmatically, then retry.
  */
-async function sendMessageWithInject<T>(tabId: number, message: unknown): Promise<T> {
+export async function sendMessageWithInject<T>(tabId: number, message: unknown): Promise<T> {
   try {
     return await chrome.tabs.sendMessage(tabId, message);
   } catch (err) {
@@ -50,7 +64,7 @@ async function sendMessageWithInject<T>(tabId: number, message: unknown): Promis
   }
 }
 
-async function init(): Promise<void> {
+export async function init(): Promise<void> {
   const tab = await getActiveGeminiTab();
   if (!tab) {
     chatTitleEl.textContent = 'Not on Gemini – open a chat first';
@@ -70,79 +84,76 @@ async function init(): Promise<void> {
   }
 }
 
-document.querySelectorAll<HTMLButtonElement>('.export-btn').forEach((btn) => {
-  btn.addEventListener('click', async () => {
-    const format = btn.dataset.format;
-    const tab = await getActiveGeminiTab();
-    if (!tab) {
-      showStatus('Please open a Gemini chat tab first.', 'error');
+export async function handleExportClick(format: string | undefined): Promise<void> {
+  const tab = await getActiveGeminiTab();
+  if (!tab) {
+    showStatus('Please open a Gemini chat tab first.', 'error');
+    return;
+  }
+
+  showStatus('Extracting chat content…', 'loading');
+  setButtonsDisabled(true);
+
+  try {
+    const chatData = await sendMessageWithInject<ChatData>(tab.id!, { action: 'extractChat' });
+
+    if (!chatData || !chatData.turns || chatData.turns.length === 0) {
+      showStatus('No chat content found. Make sure a conversation is open.', 'error');
+      setButtonsDisabled(false);
       return;
     }
 
-    showStatus('Extracting chat content…', 'loading');
-    setButtonsDisabled(true);
+    showStatus('Generating export…', 'loading');
 
-    try {
-      const chatData = await sendMessageWithInject<ChatData>(tab.id!, { action: 'extractChat' });
+    const safeName = buildSafeFilename(chatData.title);
 
-      if (!chatData || !chatData.turns || chatData.turns.length === 0) {
-        showStatus('No chat content found. Make sure a conversation is open.', 'error');
-        setButtonsDisabled(false);
-        return;
+    let filename: string;
+    let blob: Blob;
+
+    switch (format) {
+      case 'markdown': {
+        const md = exportMarkdown(chatData);
+        filename = `${safeName}.md`;
+        blob = new Blob([md], { type: 'text/markdown' });
+        break;
       }
-
-      showStatus('Generating export…', 'loading');
-
-      const safeName =
-        chatData.title
-          .replace(/[^\w\s-]/g, '')
-          .replace(/\s+/g, '-')
-          .substring(0, 60) || 'gemini-chat';
-
-      let filename: string;
-      let blob: Blob;
-
-      switch (format) {
-        case 'markdown': {
-          const md = exportMarkdown(chatData);
-          filename = `${safeName}.md`;
-          blob = new Blob([md], { type: 'text/markdown' });
-          break;
-        }
-        case 'docx': {
-          blob = await exportDocx(chatData);
-          filename = `${safeName}.docx`;
-          break;
-        }
-        case 'html_single': {
-          const html = exportHtmlSingle(chatData);
-          filename = `${safeName}.html`;
-          blob = new Blob([html], { type: 'text/html' });
-          break;
-        }
-        case 'html_linked': {
-          blob = await exportHtmlLinked(chatData);
-          filename = `${safeName}.zip`;
-          break;
-        }
-        default:
-          throw new Error(`Unknown format: ${format}`);
+      case 'docx': {
+        blob = await exportDocx(chatData);
+        filename = `${safeName}.docx`;
+        break;
       }
-
-      // Trigger download via object URL
-      const url = URL.createObjectURL(blob);
-      await chrome.downloads.download({ url, filename, saveAs: false });
-      URL.revokeObjectURL(url);
-
-      showStatus(`✓ Exported as ${filename}`, 'success');
-    } catch (err) {
-      console.error('Export error:', err);
-      const message = err instanceof Error ? err.message : String(err);
-      showStatus(`Error: ${message}`, 'error');
-    } finally {
-      setButtonsDisabled(false);
+      case 'html_single': {
+        const html = exportHtmlSingle(chatData);
+        filename = `${safeName}.html`;
+        blob = new Blob([html], { type: 'text/html' });
+        break;
+      }
+      case 'html_linked': {
+        blob = await exportHtmlLinked(chatData);
+        filename = `${safeName}.zip`;
+        break;
+      }
+      default:
+        throw new Error(`Unknown format: ${format}`);
     }
-  });
+
+    // Trigger download via object URL
+    const url = URL.createObjectURL(blob);
+    await chrome.downloads.download({ url, filename, saveAs: false });
+    URL.revokeObjectURL(url);
+
+    showStatus(`✓ Exported as ${filename}`, 'success');
+  } catch (err) {
+    console.error('Export error:', err);
+    const message = err instanceof Error ? err.message : String(err);
+    showStatus(`Error: ${message}`, 'error');
+  } finally {
+    setButtonsDisabled(false);
+  }
+}
+
+document.querySelectorAll<HTMLButtonElement>('.export-btn').forEach((btn) => {
+  btn.addEventListener('click', () => handleExportClick(btn.dataset.format));
 });
 
 init();
