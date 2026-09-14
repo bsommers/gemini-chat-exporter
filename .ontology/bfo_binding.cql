@@ -1,0 +1,1 @@
+CREATE (d:Domain {name: 'SoftwareEngineering'})-[:SUBCLASS_OF]->(b:BFO:Continuant:GenericallyDependentContinuant)
