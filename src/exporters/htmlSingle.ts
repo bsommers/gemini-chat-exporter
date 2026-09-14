@@ -1,4 +1,6 @@
 import type { ChatData } from '../content/types';
+import { sanitizeHtml } from './sanitizer';
+import { renderThoughtHtml, renderCitationsHtml } from './htmlFragments';
 
 export function exportHtmlSingle(chatData: ChatData): string {
   const { title, turns, images } = chatData;
@@ -10,9 +12,9 @@ export function exportHtmlSingle(chatData: ChatData): string {
   }
 
   function processHtml(html: string): string {
-    // TODO milestone 3: apply sanitizer before embedding raw Gemini HTML
+    const clean = sanitizeHtml(html);
     // Replace image placeholders with embedded base64
-    return html.replace(/src="__IMAGE_PLACEHOLDER__(image-\d+)"/g, (_match, id) => {
+    return clean.replace(/src="__IMAGE_PLACEHOLDER__(image-\d+)"/g, (_match, id) => {
       const imgMeta = imageMap[id];
       if (imgMeta?.base64) {
         return `src="${imgMeta.base64}"`;
@@ -24,14 +26,18 @@ export function exportHtmlSingle(chatData: ChatData): string {
   const turnsHtml = turns
     .map((turn) => {
       const isUser = turn.role === 'user';
-      const html = isUser ? `<p class="user-text">${escapeHtml(turn.text)}</p>` : processHtml(turn.html);
+      const thoughtHtml = !isUser && turn.thought ? renderThoughtHtml(turn.thought, sanitizeHtml) : '';
+      const bodyHtml = isUser ? `<p class="user-text">${escapeHtml(turn.text)}</p>` : processHtml(turn.html);
+      const citationsHtml = !isUser && turn.citations?.length ? renderCitationsHtml(turn.citations) : '';
 
       return `
     <div class="turn ${isUser ? 'turn-user' : 'turn-model'}">
       <div class="turn-avatar">${isUser ? '👤' : '✦'}</div>
       <div class="turn-content">
         <div class="turn-role">${isUser ? 'You' : 'Gemini'}</div>
-        <div class="turn-body">${html}</div>
+        ${thoughtHtml}
+        <div class="turn-body">${bodyHtml}</div>
+        ${citationsHtml}
       </div>
     </div>`;
     })
@@ -210,5 +216,36 @@ function getStyles(): string {
       color: #8ab4f8;
       font-weight: 600;
     }
+    .thought-details {
+      margin-bottom: 12px;
+      border: 1px solid rgba(138,180,248,0.15);
+      border-radius: 10px;
+      padding: 10px 14px;
+      background: rgba(255,255,255,0.03);
+    }
+    .thought-summary {
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      color: #6272a4;
+    }
+    .thought-body {
+      margin-top: 8px;
+      font-size: 13px;
+      color: #aab4d4;
+      font-style: italic;
+    }
+    .citations {
+      list-style: none;
+      margin: 14px 0 0;
+      padding: 12px 14px;
+      border-top: 1px solid rgba(138,180,248,0.15);
+      font-size: 13px;
+    }
+    .citations li { margin-bottom: 6px; }
+    .citation-index { color: #6272a4; margin-right: 4px; }
+    .citation-link { color: #8ab4f8; }
+    .citation-snippet { display: block; color: #6272a4; font-size: 12px; margin-top: 2px; }
   `;
 }

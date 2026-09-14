@@ -1,5 +1,23 @@
 import TurndownService from 'turndown';
-import type { ChatData } from '../content/types';
+import { gfm } from 'turndown-plugin-gfm';
+import type { ChatData, Citation, Thought } from '../content/types';
+
+function renderThought(thought: Thought): string {
+  const header = thought.duration ? `Thinking (${thought.duration})` : 'Thinking';
+  const body = thought.text.trim();
+  const quoted = [`> [!NOTE] ${header}`, ...body.split('\n').map((line) => `> ${line}`)];
+  return quoted.join('\n');
+}
+
+function renderCitations(citations: Citation[]): string {
+  const lines = ['**Sources:**', ''];
+  citations.forEach((c, i) => {
+    const label = c.index ?? String(i + 1);
+    const suffix = c.snippet ? ` — ${c.snippet}` : '';
+    lines.push(`[${label}] [${c.title || c.url}](${c.url})${suffix}`);
+  });
+  return lines.join('\n');
+}
 
 export function exportMarkdown(chatData: ChatData): string {
   const { title, turns, images } = chatData;
@@ -17,6 +35,7 @@ export function exportMarkdown(chatData: ChatData): string {
     codeBlockStyle: 'fenced',
     bulletListMarker: '-'
   });
+  td.use(gfm);
 
   // Preserve code blocks
   td.addRule('codeBlock', {
@@ -51,11 +70,22 @@ export function exportMarkdown(chatData: ChatData): string {
     } else {
       lines.push(`## 🤖 Gemini`);
       lines.push('');
+
+      if (turn.thought) {
+        lines.push(renderThought(turn.thought));
+        lines.push('');
+      }
+
       try {
         const md = td.turndown(turn.html);
         lines.push(md);
       } catch {
         lines.push(turn.text);
+      }
+
+      if (turn.citations?.length) {
+        lines.push('');
+        lines.push(renderCitations(turn.citations));
       }
     }
 

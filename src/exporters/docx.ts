@@ -10,9 +10,11 @@ import {
   TableRow,
   TableCell,
   WidthType,
-  ShadingType
+  ShadingType,
+  ExternalHyperlink
 } from 'docx';
-import type { ChatData, ImageAsset } from '../content/types';
+import type { ChatData, Citation, ImageAsset, Thought } from '../content/types';
+import { sanitizeHtml } from './sanitizer';
 
 type DocxNode = Paragraph | Table | TextRun;
 
@@ -56,7 +58,7 @@ export async function exportDocx(chatData: ChatData): Promise<Blob> {
    */
   function htmlToDocxChildren(htmlStr: string): DocxNode[] {
     const div = document.createElement('div');
-    div.innerHTML = htmlStr;
+    div.innerHTML = sanitizeHtml(htmlStr);
     return nodesToDocx(div.childNodes);
   }
 
@@ -260,6 +262,43 @@ export async function exportDocx(chatData: ChatData): Promise<Blob> {
     return runs;
   }
 
+  function renderThoughtCallout(thought: Thought): Paragraph {
+    const header = thought.duration ? `Thinking (${thought.duration})` : 'Thinking';
+    return new Paragraph({
+      children: [
+        new TextRun({ text: `${header}\n`, bold: true, italics: true, color: '6272A4', size: 20 }),
+        new TextRun({ text: thought.text, italics: true, color: '6272A4', size: 20 })
+      ],
+      shading: { type: ShadingType.SOLID, color: 'F3F5FA' },
+      border: { left: { style: BorderStyle.SINGLE, size: 6, color: '8AB4F8' } },
+      spacing: { before: 100, after: 150 },
+      indent: { left: 120 }
+    });
+  }
+
+  function renderCitationParagraphs(citations: Citation[]): Paragraph[] {
+    const heading = new Paragraph({
+      children: [new TextRun({ text: 'Sources', bold: true, size: 20, color: '1A73E8' })],
+      spacing: { before: 150, after: 60 }
+    });
+    const items = citations.map((c, i) => {
+      const label = c.index ?? String(i + 1);
+      const linkText = c.title || c.url;
+      const children = [
+        new TextRun({ text: `[${label}] `, size: 18, color: '666666' }),
+        new ExternalHyperlink({
+          link: c.url,
+          children: [new TextRun({ text: linkText, size: 18, color: '1155CC', underline: {} })]
+        })
+      ];
+      if (c.snippet) {
+        children.push(new TextRun({ text: ` — ${c.snippet}`, size: 18, color: '666666' }));
+      }
+      return new Paragraph({ children, spacing: { after: 40 } });
+    });
+    return [heading, ...items];
+  }
+
   // Build document children
   const children: (Paragraph | Table)[] = [];
 
@@ -316,7 +355,10 @@ export async function exportDocx(chatData: ChatData): Promise<Blob> {
         })
       );
     } else {
-      // TODO milestone 3: apply sanitizer before embedding raw Gemini HTML
+      if (turn.thought) {
+        children.push(renderThoughtCallout(turn.thought));
+      }
+
       const docxNodes = htmlToDocxChildren(turn.html);
       for (const node of docxNodes) {
         if (node instanceof Paragraph || node instanceof Table) {
@@ -325,6 +367,10 @@ export async function exportDocx(chatData: ChatData): Promise<Blob> {
           // TextRuns at top level get wrapped in a paragraph
           children.push(new Paragraph({ children: [node] }));
         }
+      }
+
+      if (turn.citations?.length) {
+        children.push(...renderCitationParagraphs(turn.citations));
       }
     }
   }
