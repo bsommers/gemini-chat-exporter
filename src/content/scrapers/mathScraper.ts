@@ -20,7 +20,7 @@ export function scrapeMath(clone: HTMLElement): void {
       if (!tex) continue;
 
       const isBlock = el.classList.contains('math-block');
-      const replacementText = isBlock ? `\n\n$$$$\n${tex}\n$$$$\n\n` : `$${tex}$$`;
+      const replacementText = isBlock ? `\n\n$$\n${tex}\n$$\n\n` : `$${tex}$`;
 
       const replacement = document.createTextNode(replacementText);
       el.replaceWith(replacement);

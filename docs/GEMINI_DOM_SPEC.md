@@ -162,8 +162,8 @@ Gemini renders math formulas using KaTeX. The raw TeX source is stored inside Ma
 **Extraction Strategy:**
 1. Locate elements matching `.math-inline, .math-block, [data-math]`.
 2. Extract TeX source from `annotation[encoding="application/x-tex"]` or `[data-tex]`.
-3. If inline: replace node in clone with `$${tex}$$`.
-4. If block (`div.math-block`): replace node in clone with `\n\n$$$$\n${tex}\n$$$$\n\n`.
+3. If inline: replace node in clone with `$tex$` (single dollar signs).
+4. If block (`div.math-block`): replace node in clone with `\n\n$$\n{tex}\n$$\n\n` (double dollar signs).
 
 ---
 
